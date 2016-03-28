@@ -1,17 +1,17 @@
-linux-2.6 for DEBIAN
-------------------------
+Linux kernel for Debian
+-----------------------
 
 Patches
 -------
 Debian applies small changes to the kernel source. These are split up into
 separated patches addressing individual problems. Each of the patch files
 contains a description and mentions the author. The patches can be found
-at http://svn.debian.org/wsvn/kernel/dists/trunk/linux-2.6/debian/patches/.
+at https://anonscm.debian.org/cgit/kernel/linux.git/tree/debian/patches.
 
 Config Files
 ------------
 The .config files used to build the various linux-image files are dynamically
-generated during the linux-2.6 package build.  See the source package for
+generated during the linux package build.  See the source package for
 details.  Each linux-image-* package provides the complete .config file that
 was used to generate it.  This file is installed in /boot.
 
@@ -24,38 +24,33 @@ given a lower priority for security support. Options marked as BROKEN
 or EXPERIMENTAL are of very low priority, and should not be enabled in
 customized builds for a security-sensitive environment.
 
+Building custom kernel binary packages
+--------------------------------------
+We recommend using the 'make deb-pkg' target provided by the upstream
+kernel source.
+
+Rebuilding official binary packages
+-----------------------------------
+You can build specific kernel binary packages using the targets in
+debian/rules.gen, which have names of the form:
+    binary-arch_<architecture>_<featureset>_<flavour>
+
+Example:
+    fakeroot make -f debian/rules.gen binary-arch_i386_none_686
+
 Rebuilding Adaptec AIC7xxx/79xx firmware
 ----------------------------------------
 You can rebuild the firmware for the Adaptec AIC7xxx/79xx SCSI Adapters. To
 do so you need to set AIC7XXX_BUILD_FIRMWARE/AIC79XX_BUILD_FIRMWARE config
 options.  Note that this requires to have the development packages for
-berkelydb (libdb4.2-dev) installed.
-
-PS/2 Mice
----------
-If your PS/2 mouse does not work, make sure that the modules psmouse and
-mousedev are loaded.
-
-mem= on 2.4.19 and later
-------------------------
-mem=xxxM can no longer be used to enlarge the RAM that the kernel uses.
-You must specify the exact memory map.  For example, Compaq Proliant users
-can specify mem=48M@16M if they have 64M of memory.
+Berkeley Database (libdb-dev) installed.
 
 Non-free bits removed
 ---------------------
-* Keyspan firmware, driver disabled
-  . drivers/usb/serial/ksyspan_{mpr,usa*}_fw.h
-* Emagic EMI 2|6 usb audio interface firmware loader
-  . drivers/usb/misc/emi62_fw_*.h
+See the patches under debian/patches/debian/dfsg.
 
-Firmware removed
-----------------
-* SMC Token Ring firmware, driver disabled:
-  . drivers/net/tokenring/smctr_firmware.h
-* ACENIC firwmare, driver disabled:
-  . drivers/net/acenic_firmware.h
-* DGRS firmware, driver disabled:
-  . drivers/net/dgrs_firmware.c
-* DAB firmware, driver disabled:
-  . drivers/usb/media/dabfirmware.h
+Further information
+-------------------
+Debian Linux Kernel Handbook: http://kernel-handbook.alioth.debian.org
+                              or debian-kernel-handbook package
+Debian Wiki: http://wiki.debian.org/DebianKernel

@@ -1,91 +1,102 @@
 #!/usr/bin/make -f
-#
-# Generally nothing needs to be modified below this line
-#
+
 SHELL    := sh -e
-DEB_HOST_ARCH  := $(shell dpkg-architecture -qDEB_HOST_ARCH)
-DEB_BUILD_ARCH := $(shell dpkg-architecture -qDEB_BUILD_ARCH)
-SOURCE   := $(shell dpkg-parsechangelog | sed -ne 's,^Source: *\(.*\)$$,\1,p')
-VERSION_DEBIAN := $(shell dpkg-parsechangelog | sed -ne 's,^Version: *\(.*\)$$,\1,p')
-VERSION  := $(shell echo "$(VERSION_DEBIAN)" | sed -e 's,-[^-]*$$,,')
-VERSION_DEBIAN_BINNMU := $(shell echo "$(VERSION_DEBIAN)" | sed -ne 's,.*\+b\(.*\)$$,\1,p')
+DEB_HOST_ARCH := $(shell dpkg-architecture -qDEB_HOST_ARCH)
+SOURCE := $(shell dpkg-parsechangelog | sed -ne 's,^Source: *\(.*\)$$,\1,p')
+VERSION := $(shell dpkg-parsechangelog | sed -ne 's,^Version: *\(.*\)$$,\1,p')
+VERSION_UPSTREAM := $(shell echo "$(VERSION)" | sed -e 's,-[^-]*$$,,')
+VERSION_BINNMU := $(shell echo "$(VERSION)" | sed -ne 's,.*+b\(.*\)$$,\1,p')
 
 include debian/rules.defs
 
-source: debian/control $(STAMPS_DIR)/source-base
-$(STAMPS_DIR)/source-base: $(BUILD_DIR) $(STAMPS_DIR)
-	dh_testdir
-	$(MAKE) -f debian/rules.gen source-$(DEB_HOST_ARCH)
-	touch $@
+ifneq (,$(filter parallel=%,$(DEB_BUILD_OPTIONS)))
+  DEBIAN_KERNEL_JOBS := $(subst parallel=,,$(filter parallel=%,$(DEB_BUILD_OPTIONS)))
+endif
+ifdef DEBIAN_KERNEL_JOBS
+  MAKEFLAGS += -j$(DEBIAN_KERNEL_JOBS)
+endif
+BUILD_STAGE1 := $(filter stage1,$(DEB_BUILD_PROFILES))
 
-source-all: debian/control $(BUILD_DIR) $(STAMPS_DIR)
+.NOTPARALLEL:
+
+source: debian/control
 	dh_testdir
 	$(MAKE) -f debian/rules.gen source
 
-setup: debian/control $(STAMPS_DIR)/setup-base
-$(STAMPS_DIR)/setup-base: $(STAMPS_DIR)/source-base
+setup: debian/control
 	dh_testdir
-	$(MAKE) -f debian/rules.gen setup-$(DEB_HOST_ARCH)
-	touch $@
+	$(MAKE) -f debian/rules.gen setup_$(DEB_HOST_ARCH)
 
-build: debian/control $(STAMPS_DIR)/build-base
-$(STAMPS_DIR)/build-base: $(STAMPS_DIR)/setup-base
+build: build-arch build-indep
+
+build-arch: debian/control
 	dh_testdir
-	$(MAKE) -f debian/rules.gen build-$(DEB_HOST_ARCH)
-	touch $@
+ifndef BUILD_STAGE1
+	$(MAKE) -f debian/rules.gen build-arch_$(DEB_HOST_ARCH)
+endif
 
-$(BUILD_DIR) $(STAMPS_DIR):
-	@[ -d $@ ] || mkdir $@
-
-DIR_ORIG = ../orig/$(SOURCE)-$(VERSION)
-TAR_ORIG = ../$(SOURCE)_$(VERSION).orig.tar.gz
-
-orig: $(DIR_ORIG)
-	rsync --delete --exclude debian --exclude .svn --link-dest=$(DIR_ORIG)/ -a $(DIR_ORIG)/ .
-
-$(DIR_ORIG):
-	@[ -e $(TAR_ORIG) ] || ( echo "Can't find orig tarball" >&2; exit 1 )
-	mkdir -p ../orig
-	tar -C ../orig -xzf $(TAR_ORIG)
-
-maintainerclean:
-	rm -f debian/control debian/control.md5sum debian/rules.gen debian/bin/patch.* debian/linux-*
-	rm -rf $(filter-out debian .svn, $(wildcard * .[^.]*))
-
-clean: debian/control
+build-indep: debian/control
 	dh_testdir
-	rm -rf $(BUILD_DIR) $(STAMPS_DIR) debian/lib/python/debian_linux/*.pyc
-	dh_clean
-
-binary-indep: $(STAMPS_DIR)/source-base
-	dh_testdir
-	$(MAKE) -f debian/rules.gen binary-indep
-
-binary-arch: $(STAMPS_DIR)/build-base
-	dh_testdir
-	$(MAKE) -f debian/rules.gen binary-arch-$(DEB_HOST_ARCH)
+ifndef BUILD_STAGE1
+	$(MAKE) -f debian/rules.gen build-indep
+endif
 
 binary:	binary-indep binary-arch
 
+binary-arch:
+	dh_testdir
+ifdef BUILD_STAGE1
+	$(MAKE) -f debian/rules.gen binary-libc-dev_$(DEB_HOST_ARCH)
+else
+	$(MAKE) -f debian/rules.gen binary-arch_$(DEB_HOST_ARCH)
+endif
+
+binary-indep:
+	dh_testdir
+ifndef BUILD_STAGE1
+	$(MAKE) -f debian/rules.gen binary-indep
+endif
+
+DIR_ORIG = ../orig/$(SOURCE)-$(VERSION_UPSTREAM)
+TAR_ORIG_NAME = $(SOURCE)_$(VERSION_UPSTREAM).orig.tar.xz
+TAR_ORIG = $(firstword $(wildcard ../$(TAR_ORIG_NAME)) $(wildcard ../orig/$(TAR_ORIG_NAME)))
+
+orig: $(DIR_ORIG)
+	rsync --delete --exclude /debian --exclude .svk --exclude .svn --exclude .git --link-dest=$(DIR_ORIG)/ -a $(DIR_ORIG)/ .
+	QUILT_PATCHES='$(CURDIR)/debian/patches' QUILT_PC=.pc quilt push --quiltrc - -a -q --fuzz=0
+
+$(DIR_ORIG):
+ifeq ($(TAR_ORIG),)
+	$(error Cannot find orig tarball $(TAR_ORIG_NAME))
+else
+	mkdir -p ../orig
+	tar -C ../orig -xaf $(TAR_ORIG)
+endif
+
+maintainerclean:
+	rm -f debian/config.defines.dump debian/control debian/control.md5sum debian/linux-* debian/rules.gen debian/po/*.po
+	rm -rf $(filter-out debian .svk .svn .git, $(wildcard * .[^.]*))
+
+clean: debian/control
+	dh_testdir
+	rm -rf $(BUILD_DIR) $(STAMPS_DIR) debian/lib/python/debian_linux/*.pyc debian/lib/python/debian_linux/__pycache__ $$(find debian -maxdepth 1 -type d -name 'linux-*') debian/*-modules-*-di* debian/kernel-image-*-di* debian/xen-linux-system-*
+	dh_clean
+
 CONTROL_FILES = debian/changelog $(wildcard debian/templates/*.in)
-CONTROL_FILES += debian/arch/defines $(wildcard debian/arch/*/defines) $(wildcard debian/arch/*/*/defines)
+CONTROL_FILES += debian/config/defines $(wildcard debian/config/*/defines) $(wildcard debian/config/*/*/defines)
+CONTROL_FILES += $(wildcard debian/installer/*/kernel-versions) $(wildcard debian/installer/*/package-list) debian/installer/package-list
 debian/control debian/rules.gen: debian/bin/gencontrol.py $(CONTROL_FILES)
-	if [ -f debian/control.md5sum ]; then \
-		if [ "$(VERSION_DEBIAN_BINNMU)" ]; then \
-			if ! grep -v debian/changelog debian/control.md5sum | md5sum --check - --status; then \
-				$(MAKE) -f debian/rules debian/control-real; \
-			fi \
-		else \
-			if ! md5sum --check debian/control.md5sum --status; then \
-				$(MAKE) -f debian/rules debian/control-real; \
-			fi \
-		fi \
-	else \
-		$(MAKE) -f debian/rules debian/control-real; \
-	fi
+ifeq ($(wildcard debian/control.md5sum),)
+	$(MAKE) -f debian/rules debian/control-real
+else ifeq ($(VERSION_BINNMU),)
+	md5sum --check debian/control.md5sum --status || \
+		$(MAKE) -f debian/rules debian/control-real
+else
+	grep -v debian/changelog debian/control.md5sum | md5sum --check - --status || \
+		$(MAKE) -f debian/rules debian/control-real
+endif
 
 debian/control-real: debian/bin/gencontrol.py $(CONTROL_FILES)
-	chmod +x $<
 	$<
 	md5sum $^ > debian/control.md5sum
 	@echo
@@ -95,23 +106,5 @@ debian/control-real: debian/bin/gencontrol.py $(CONTROL_FILES)
 	@echo been generated SUCCESSFULLY.
 	@echo
 	exit 1
-
-#
-# Rule to check all configs snipplets in debian/arch
-#
-
-CheckConfs_DIR := $(BUILD_DIR)/check
-
-$(CheckConfs_DIR) source-configs: debian/control $(BUILD_DIR) $(STAMPS_DIR)
-	$(MAKE) -f debian/rules.gen setup-$(DEB_HOST_ARCH)-real
-	rm -rf '$(CheckConfs_DIR)'
-	cp -al $(BUILD_DIR)/source $(CheckConfs_DIR)
-
-check-configs: $(CheckConfs_DIR)
-	@echo "Checking all configuration files"
-	ocaml debian/bin/kconfig.ml -c -b "debian/arch"
-
-clean-configs:
-	rm -rf '$(CheckConfs_DIR)'
 
 .PHONY: clean build setup binary-indep binary-arch binary

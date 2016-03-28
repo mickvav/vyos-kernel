@@ -1,43 +1,62 @@
+from collections import OrderedDict
+
 __all__ = (
     "KconfigFile",
 )
 
-class EntryString(object):
-    __slots__ = "name", "value"
 
-    def __init__(self, name, value):
-        self.name = name
-        self.value = value
+class KConfigEntry(object):
+    __slots__ = 'name', 'value', 'comments'
+
+    def __init__(self, name, value, comments=None):
+        self.name, self.value = name, value
+        self.comments = comments or []
+
+    def __eq__(self, other):
+        return self.name == other.name and self.value == other.value
+
+    def __hash__(self):
+        return hash(self.name) | hash(self.value)
+
+    def __repr__(self):
+        return '<{}({!r}, {!r}, {!r})>'.format(self.__class__.__name__, self.name, self.value, self.comments)
 
     def __str__(self):
-        return "CONFIG_%s=%s" % (self.name, self.value)
+        return 'CONFIG_{}={}'.format(self.name, self.value)
 
-class EntryTristate(object):
-    __slots__ = "name", "value"
+    def write(self):
+        for comment in self.comments:
+            yield '#. ' + comment
+        yield str(self)
 
-    VALUE_NO = 0
-    VALUE_YES = 1
-    VALUE_MOD = 2
 
-    def __init__(self, name, value = None):
-        self.name = name
+class KConfigEntryTristate(KConfigEntry):
+    __slots__ = ()
+
+    VALUE_NO = False
+    VALUE_YES = True
+    VALUE_MOD = object()
+
+    def __init__(self, name, value, comments=None):
         if value == 'n' or value is None:
-            self.value = self.VALUE_NO
+            value = self.VALUE_NO
         elif value == 'y':
-            self.value = self.VALUE_YES
+            value = self.VALUE_YES
         elif value == 'm':
-            self.value = self.VALUE_MOD
+            value = self.VALUE_MOD
+        else:
+            raise NotImplementedError
+        super(KConfigEntryTristate, self).__init__(name, value, comments)
 
     def __str__(self):
-        conf = "CONFIG_%s" % self.name
-        if self.value == self.VALUE_NO:
-            return "# %s is not set" % conf
-        elif self.value == self.VALUE_YES:
-            return "%s=y" % conf
-        elif self.value == self.VALUE_MOD:
-            return "%s=m" % conf
+        if self.value is self.VALUE_MOD:
+            return 'CONFIG_{}=m'.format(self.name)
+        if self.value:
+            return 'CONFIG_{}=y'.format(self.name)
+        return '# CONFIG_{} is not set'.format(self.name)
 
-class KconfigFile(dict):
+
+class KconfigFile(OrderedDict):
     def __str__(self):
         ret = []
         for i in self.str_iter():
@@ -50,21 +69,23 @@ class KconfigFile(dict):
             if line.startswith("CONFIG_"):
                 i = line.find('=')
                 option = line[7:i]
-                value = line[i+1:]
-                if value in ('y', 'm'):
-                    entry = EntryTristate(option, value)
-                else:
-                    entry = EntryString(option, value)
-                self[option] = entry
+                value = line[i + 1:]
+                self.set(option, value)
             elif line.startswith("# CONFIG_"):
                 option = line[9:-11]
-                self[option] = EntryTristate(option)
+                self.set(option, 'n')
             elif line.startswith("#") or not line:
                 pass
             else:
-                raise RuntimeError, "Can't recognize %s" % line
+                raise RuntimeError("Can't recognize %s" % line)
+
+    def set(self, key, value):
+        if value in ('y', 'm', 'n'):
+            entry = KConfigEntryTristate(key, value)
+        else:
+            entry = KConfigEntry(key, value)
+        self[key] = entry
 
     def str_iter(self):
-        for key, value in self.iteritems():
+        for key, value in self.items():
             yield str(value)
-
