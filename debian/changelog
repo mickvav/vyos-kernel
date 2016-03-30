@@ -1,5 +1,11 @@
 linux (4.4.6-1) unstable; urgency=medium
 
+  * Try to make it compilable on debian 8.3 for VyOS 2.0
+
+ -- Mihail Vasiliev <mick@corp.linkintel.ru>  Mon, 28 Mar 2016 16:47:48 +0003
+
+linux (4.4.6-1) unstable; urgency=medium
+
   [ Salvatore Bonaccorso ]
   * New upstream stable update:
     https://www.kernel.org/pub/linux/kernel/v4.x/ChangeLog-4.4.5

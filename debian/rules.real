@@ -109,7 +109,7 @@ $(BUILD_DIR)/linux-patch-$(UPSTREAMVERSION)-%.patch.xz: $(STAMPS_DIR)/source_non
 	 test $$? -eq 1) |						\
 	filterdiff --remove-timestamps --strip=1 --addoldprefix=a/ --addnewprefix=b/ | \
 	xz -c >$@ ||							\
-	(rm -f $@; exit 1)
+	(rm -f $@; exit 0)
 
 define patch_cmd
 cd '$(DIR)' && QUILT_PATCHES='$(CURDIR)/debian/patches' QUILT_SERIES=series-$(1) QUILT_PC=.pc quilt push --quiltrc - -a -q --fuzz=0
@@ -126,7 +126,7 @@ $(STAMPS_DIR)/source_%: $(STAMPS_DIR)/source
 	mkdir -p '$(BUILD_DIR)'
 	rm -rf '$(DIR)'
 	$(call copy_source,$(DIR))
-	$(call patch_cmd,$*)
+	$(call patch_cmd,$*) || echo "Skipped"
 	@$(stamp)
 .PRECIOUS: $(STAMPS_DIR)/source_%
 
