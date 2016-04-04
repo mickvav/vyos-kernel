@@ -1,117 +1,108 @@
-#!/usr/bin/make -f
-#
-# Generally nothing needs to be modified below this line
-#
-SHELL    := sh -e
-DEB_HOST_ARCH  := $(shell dpkg-architecture -qDEB_HOST_ARCH)
-DEB_BUILD_ARCH := $(shell dpkg-architecture -qDEB_BUILD_ARCH)
-SOURCE   := $(shell dpkg-parsechangelog | sed -ne 's,^Source: *\(.*\)$$,\1,p')
-VERSION_DEBIAN := $(shell dpkg-parsechangelog | sed -ne 's,^Version: *\(.*\)$$,\1,p')
-VERSION  := $(shell echo "$(VERSION_DEBIAN)" | sed -e 's,-[^-]*$$,,')
-VERSION_DEBIAN_BINNMU := $(shell echo "$(VERSION_DEBIAN)" | sed -ne 's,.*\+b\(.*\)$$,\1,p')
+#! /usr/bin/make -f
+############################ -*- Mode: Makefile -*- ###########################
+## debian.rules ---
+## Author	    : Manoj Srivastava ( srivasta@pilgrim.umass.edu )
+## Created On	    : Sat Apr 27 06:36:31 1996
+## Created On Node  : melkor.pilgrim.umass.edu
+## Last Modified By : Manoj Srivastava
+## Last Modified On : Thu Oct  9 14:17:29 2008
+## Last Machine Used: anzu.internal.golden-gryphon.com
+## Update Count	    : 974
+## Status	    : Unknown, Use with caution!
+## HISTORY	    :
+## Description	    :
+## arch-tag: aa70d4e5-79bf-405c-95ec-5fa9f7ae7b69
+## 
+## This program is free software; you can redistribute it and/or modify
+## it under the terms of the GNU General Public License as published by
+## the Free Software Foundation; either version 2 of the License, or
+## (at your option) any later version.
+##
+## This program is distributed in the hope that it will be useful,
+## but WITHOUT ANY WARRANTY; without even the implied warranty of
+## MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+## GNU General Public License for more details.
+##
+## You should have received a copy of the GNU General Public License
+## along with this program; if not, write to the Free Software
+## Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+##
+###############################################################################
 
-include debian/rules.defs
+# The version of kernel-package this belongs to
+kpkg_version := 13.014+nmu1
 
-source: debian/control $(STAMPS_DIR)/source-base
-$(STAMPS_DIR)/source-base: $(BUILD_DIR) $(STAMPS_DIR)
-	dh_testdir
-	$(MAKE) -f debian/rules.gen source-$(DEB_HOST_ARCH)
-	touch $@
+CROSS_COMPILE   ?=
+ifneq ($(CROSS_COMPILE),-)
+OBJCOPY         = $(CROSS_COMPILE)objcopy
+OBJDUMP         = $(CROSS_COMPILE)objdump
+else
+OBJCOPY         = objcopy
+OBJDUMP         = objdump
+endif
+export OBJCOPY OBJDUMP CROSS_COMPILE
 
-source-all: debian/control $(BUILD_DIR) $(STAMPS_DIR)
-	dh_testdir
-	$(MAKE) -f debian/rules.gen source
+# Where the package libs are stored
+LIBLOC     :=/usr/share/kernel-package
 
-setup: debian/control $(STAMPS_DIR)/setup-base
-$(STAMPS_DIR)/setup-base: $(STAMPS_DIR)/source-base
-	dh_testdir
-	$(MAKE) -f debian/rules.gen setup-$(DEB_HOST_ARCH)
-	touch $@
+define which_debdir
+DEBDIR=$(shell if test -f ./debian/ruleset/kernel_version.mk; then echo ./debian;     \
+                                                              else echo $(LIBLOC); fi)
+endef
 
-build: debian/control $(STAMPS_DIR)/build-base
-$(STAMPS_DIR)/build-base: $(STAMPS_DIR)/setup-base
-	dh_testdir
-	$(MAKE) -f debian/rules.gen build-$(DEB_HOST_ARCH)
-	touch $@
+define deb_rule
+$(eval $(which_debdir))
+  run_command=$(MAKE) -f $(DEBDIR)/rules
+  ifeq ($(strip $(int_am_root)),)
+    root_run_command=$(ROOT_CMD) $(MAKE) -f $(DEBDIR)/rules
+  else
+    root_run_command=$(MAKE) -f $(DEBDIR)/rules
+  endif
+endef
 
-$(BUILD_DIR) $(STAMPS_DIR):
-	@[ -d $@ ] || mkdir $@
+# determine  the architecture for package building
+$(eval $(which_debdir))
+include $(DEBDIR)/ruleset/common/archvars.mk
+# Set variables with information extracted from control and changelog files
+include $(DEBDIR)/ruleset/common/pkgvars.mk
+# Install commands
+include $(DEBDIR)/ruleset/common/install_cmds.mk
+# we use debconf
+include $(DEBDIR)/ruleset/common/debconf.mk
+# Do the local variable setting here (includes kernel-pkg.conf config files)
+include $(DEBDIR)/ruleset/local-vars.mk
 
-DIR_ORIG = ../orig/$(SOURCE)-$(VERSION)
-TAR_ORIG = ../$(SOURCE)_$(VERSION).orig.tar.gz
+# export variables
+export root_cmd FLAVOUR INT_SUBARCH APPEND_TO_VERSION UNSIGN_CHANGELOG  \
+       UNSIGN_SOURCE ROOT_CMD MODULE_LOC EXTRAVERSION ALL_PATCH_DIR     \
+       ALL_PATCH_APPLY ALL_PATCH_UNPATCH DIR_PATCH_UNPATCH              \
+       DIR_PATCH_APPLY VERSIONED_PATCH_DIR VERSIONED_ALL_PATCH_UNPATCH  \
+       VERSIONED_ALL_PATCH_APPLY VERSIONED_DIR_PATCH_UNPATCH            \
+       VERSIONED_DIR_PATCH_APPLY KPKG_SELECTED_MODULES CONCURRENCY_LEVEL\
+       kpkg_version
 
-orig: $(DIR_ORIG)
-	rsync --delete --exclude debian --exclude .svn --link-dest=$(DIR_ORIG)/ -a $(DIR_ORIG)/ .
+all:
+	$(eval $(which_debdir))
+	@echo nothing to be done.
 
-$(DIR_ORIG):
-	@[ -e $(TAR_ORIG) ] || ( echo "Can't find orig tarball" >&2; exit 1 )
-	mkdir -p ../orig
-	tar -C ../orig -xzf $(TAR_ORIG)
+$(eval $(which_debdir))
+include $(DEBDIR)/ruleset/common/targets.mk
+include $(DEBDIR)/ruleset/local.mk
 
-maintainerclean:
-	rm -f debian/control debian/control.md5sum debian/rules.gen debian/bin/patch.* debian/linux-*
-	rm -rf $(filter-out debian .svn, $(wildcard * .[^.]*))
+test:
+	$(eval $(which_debdir))
+	echo version: $(version)
+	echo KERNELRELEASE: $(KERNELRELEASE)
+	echo KPKG_ARCH: $(KPKG_ARCH)
+	echo $(DEB_BUILD_ARCH)
+	echo $(DEB_BUILD_GNU_CPU)
+	echo $(DEB_BUILD_GNU_TYPE)
+	echo $(DEB_HOST_ARCH)
+	echo $(DEB_HOST_GNU_CPU)
+	echo $(DEB_HOST_GNU_SYSTEM)
+	echo $(DEB_HOST_GNU_TYPE)
+	echo $(DEB_BUILD_GNU_SYSTEM)
 
-clean: debian/control
-	dh_testdir
-	rm -rf $(BUILD_DIR) $(STAMPS_DIR) debian/lib/python/debian_linux/*.pyc
-	dh_clean
-
-binary-indep: $(STAMPS_DIR)/source-base
-	dh_testdir
-	$(MAKE) -f debian/rules.gen binary-indep
-
-binary-arch: $(STAMPS_DIR)/build-base
-	dh_testdir
-	$(MAKE) -f debian/rules.gen binary-arch-$(DEB_HOST_ARCH)
-
-binary:	binary-indep binary-arch
-
-CONTROL_FILES = debian/changelog $(wildcard debian/templates/*.in)
-CONTROL_FILES += debian/arch/defines $(wildcard debian/arch/*/defines) $(wildcard debian/arch/*/*/defines)
-debian/control debian/rules.gen: debian/bin/gencontrol.py $(CONTROL_FILES)
-	if [ -f debian/control.md5sum ]; then \
-		if [ "$(VERSION_DEBIAN_BINNMU)" ]; then \
-			if ! grep -v debian/changelog debian/control.md5sum | md5sum --check - --status; then \
-				$(MAKE) -f debian/rules debian/control-real; \
-			fi \
-		else \
-			if ! md5sum --check debian/control.md5sum --status; then \
-				$(MAKE) -f debian/rules debian/control-real; \
-			fi \
-		fi \
-	else \
-		$(MAKE) -f debian/rules debian/control-real; \
-	fi
-
-debian/control-real: debian/bin/gencontrol.py $(CONTROL_FILES)
-	chmod +x $<
-	$<
-	md5sum $^ > debian/control.md5sum
-	@echo
-	@echo This target is made to fail intentionally, to make sure
-	@echo that it is NEVER run during the automated build. Please
-	@echo ignore the following error, the debian/control file has
-	@echo been generated SUCCESSFULLY.
-	@echo
-	exit 1
-
-#
-# Rule to check all configs snipplets in debian/arch
-#
-
-CheckConfs_DIR := $(BUILD_DIR)/check
-
-$(CheckConfs_DIR) source-configs: debian/control $(BUILD_DIR) $(STAMPS_DIR)
-	$(MAKE) -f debian/rules.gen setup-$(DEB_HOST_ARCH)-real
-	rm -rf '$(CheckConfs_DIR)'
-	cp -al $(BUILD_DIR)/source $(CheckConfs_DIR)
-
-check-configs: $(CheckConfs_DIR)
-	@echo "Checking all configuration files"
-	ocaml debian/bin/kconfig.ml -c -b "debian/arch"
-
-clean-configs:
-	rm -rf '$(CheckConfs_DIR)'
-
-.PHONY: clean build setup binary-indep binary-arch binary
+#Local variables:
+#mode: makefile
+#End:
